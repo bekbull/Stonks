@@ -28,6 +28,7 @@ struct StocksFeature: @MainActor ComposableArchitecture.Reducer {
     enum Action: Sendable, ViewAction {
         case view(View)
         case loadResponse(generation: UInt64, result: Result<[StockCard], StockError>)
+        case sessionValidationFailed(generation: UInt64, error: AuthError)
         case delegate(Delegate)
 
         @CasePathable
@@ -40,9 +41,11 @@ struct StocksFeature: @MainActor ComposableArchitecture.Reducer {
         @CasePathable
         enum Delegate: Sendable {
             case logoutRequested
+            case sessionExpired
         }
     }
 
+    @Dependency(AuthClient.self) private var authClient
     @Dependency(StockClient.self) private var stockClient
 
     var body: some ReducerOf<Self> {
@@ -67,6 +70,18 @@ struct StocksFeature: @MainActor ComposableArchitecture.Reducer {
                 state.phase = .idle
                 state.screenMessage = error == .missingAPIKey ? .missingAPIKey : .generic
                 return .none
+            case let .sessionValidationFailed(generation, error):
+                guard generation == state.loadGeneration else { return .none }
+                state.phase = .idle
+                switch error {
+                case .sessionExpired:
+                    return .send(.delegate(.sessionExpired))
+                case .connectivity:
+                    state.screenMessage = .connectivity
+                case .server, .decoding, .invalidCredentials, .sessionChanged, .staleOperation:
+                    state.screenMessage = .generic
+                }
+                return .none
             case .delegate:
                 return .none
             }
@@ -81,14 +96,19 @@ struct StocksFeature: @MainActor ComposableArchitecture.Reducer {
         let reused = Dictionary(uniqueKeysWithValues: state.cards.compactMap { card in
             card.profile.map { (card.ticker, $0) }
         })
-        return .run { [stockClient] send in
+        return .run { [authClient, stockClient] send in
             do {
+                try await authClient.validateSession()
+                try Task.checkCancellation()
                 let cards = try await stockClient.load(tickers, reused)
                 try Task.checkCancellation()
                 await send(.loadResponse(generation: generation, result: .success(cards)))
-            } catch is CancellationError {
+            } catch is CancellationError where Task.isCancelled {
             } catch let error as StockError {
                 await send(.loadResponse(generation: generation, result: .failure(error)))
+            } catch let error as AuthError {
+                guard !Task.isCancelled else { return }
+                await send(.sessionValidationFailed(generation: generation, error: error))
             } catch {
                 await send(.loadResponse(generation: generation, result: .failure(.server)))
             }
