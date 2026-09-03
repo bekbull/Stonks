@@ -51,7 +51,6 @@ struct LoginView: View {
                         Spacer()
                     }
                 }
-                .buttonStyle(.borderedProminent)
                 .disabled(!store.canSubmit)
                 .accessibilityHint("Signs in with the entered username and password")
             }
