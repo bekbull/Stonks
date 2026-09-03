@@ -59,7 +59,7 @@ nonisolated struct DummyJSONAuthAPI: Sendable {
                 ),
                 accessExpiry: requestStart.addingTimeInterval(60)
             )
-        case 400, 401:
+        case 400, 401, 403:
             throw AuthError.sessionExpired
         default:
             throw AuthError.server
