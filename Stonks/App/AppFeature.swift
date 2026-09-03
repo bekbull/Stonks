@@ -58,7 +58,8 @@ enum AppFeature: @MainActor ComposableArchitecture.CaseReducer {
                 guard case .stocks = state else { return .none }
                 return .none
 
-            case .sessionValidationFailed(.sessionExpired):
+            case .sessionValidationFailed(.sessionExpired),
+                 .stocks(.delegate(.sessionExpired)):
                 guard case .stocks = state else { return .none }
                 state = .login(
                     LoginFeature.State(errorMessage: .sessionExpired)
